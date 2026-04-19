@@ -10,12 +10,30 @@ import (
 type Config struct {
 	NullCoreURL string
 	APIKey      string
+	UserID      string
 
 	GRPCAddress string
+
+	Wise      WiseSettings
+	SnapTrade SnapTradeSettings
 
 	LogLevel  log.Level
 	LogFormat string
 }
+
+type WiseSettings struct {
+	APIToken  string
+	ProfileID string
+}
+
+func (s WiseSettings) Enabled() bool { return s.APIToken != "" }
+
+type SnapTradeSettings struct {
+	ClientID    string
+	ConsumerKey string
+}
+
+func (s SnapTradeSettings) Enabled() bool { return s.ClientID != "" && s.ConsumerKey != "" }
 
 func parseAddress(port string) string {
 	port = strings.TrimSpace(port)
@@ -36,6 +54,11 @@ func Load() Config {
 		panic("API_KEY environment variable is required")
 	}
 
+	userID := os.Getenv("NULL_USER_ID")
+	if userID == "" {
+		panic("NULL_USER_ID environment variable is required")
+	}
+
 	grpcAddress := os.Getenv("GRPC_PORT")
 	if grpcAddress == "" {
 		grpcAddress = "127.0.0.1:55558"
@@ -54,8 +77,17 @@ func Load() Config {
 	return Config{
 		NullCoreURL: nullCoreURL,
 		APIKey:      apiKey,
+		UserID:      userID,
 		GRPCAddress: parseAddress(grpcAddress),
-		LogLevel:    logLevel,
-		LogFormat:   logFormat,
+		Wise: WiseSettings{
+			APIToken:  os.Getenv("WISE_API_TOKEN"),
+			ProfileID: os.Getenv("WISE_PROFILE_ID"),
+		},
+		SnapTrade: SnapTradeSettings{
+			ClientID:    os.Getenv("SNAPTRADE_CLIENT_ID"),
+			ConsumerKey: os.Getenv("SNAPTRADE_CONSUMER_KEY"),
+		},
+		LogLevel:  logLevel,
+		LogFormat: logFormat,
 	}
 }
