@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"null-connector/internal/api"
 	"null-connector/internal/config"
 	"null-connector/internal/grpc"
 
@@ -30,6 +32,22 @@ func main() {
 
 	logger.Info("starting null-connector")
 	logger.Debug("debug is enabled")
+
+	apiClient, err := api.NewClient(cfg.NullCoreURL, cfg.APIKey)
+	if err != nil {
+		logger.Fatal("api client init", "err", err)
+	}
+	defer func() {
+		if err := apiClient.Close(); err != nil {
+			logger.Error("failed to close gRPC connection", "err", err)
+		}
+	}()
+
+	logger.Info("checking null-core connectivity", "url", cfg.NullCoreURL)
+	if err := apiClient.Ping(context.Background()); err != nil {
+		logger.Fatal("null-core not reachable", "err", err)
+	}
+	logger.Info("null-core connectivity confirmed")
 
 	grpcHealthSrv, err := grpc.NewHealthServer(cfg.GRPCAddress)
 	if err != nil {

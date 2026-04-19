@@ -74,6 +74,20 @@
             go test ./...
           '')
 
+          (writeShellScriptBin "regen" ''
+            rm -rf internal/gen/
+            ${buf}/bin/buf generate
+          '')
+
+          (writeShellScriptBin "bump-protos" ''
+            git -C proto fetch origin
+            git -C proto checkout main
+            git -C proto pull --ff-only
+            git add proto
+            git commit -m "chore: bump proto files"
+            git push
+          '')
+
           (writeShellScriptBin "cover" ''
             go test -coverprofile=coverage.out ./... && \
             go tool cover -html=coverage.out -o coverage.html
