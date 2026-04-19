@@ -1,0 +1,89 @@
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    git-hooks.url = "github:cachix/git-hooks.nix";
+    git-hooks.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = {
+    self,
+    nixpkgs,
+    git-hooks,
+  }: let
+    forAllSystems = f:
+      nixpkgs.lib.genAttrs
+      ["x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin"]
+      (system: f nixpkgs.legacyPackages.${system});
+  in {
+    checks = forAllSystems (pkgs: {
+      pre-commit = git-hooks.lib.${pkgs.system}.run {
+        src = ./.;
+        hooks = {
+          gotest.enable = true;
+          govet.enable = true;
+          alejandra.enable = true;
+          golangci-lint = {
+            enable = true;
+            name = "golangci-lint";
+            entry = "${pkgs.golangci-lint}/bin/golangci-lint fmt";
+            types = ["go"];
+          };
+
+          nix-build = {
+            enable = true;
+            name = "nix-build";
+            entry = pkgs.lib.getExe (pkgs.writeShellApplication {
+              name = "nix-build-check";
+              runtimeInputs = [pkgs.nix];
+              text = "nix build --no-link";
+            });
+            stages = ["pre-push"];
+            pass_filenames = false;
+            files = "go\\.(mod|sum)|flake\\.nix";
+          };
+        };
+      };
+    });
+
+    packages = forAllSystems (pkgs: {
+      default = pkgs.buildGoModule {
+        pname = "null-connector";
+        version = self.shortRev or self.dirtyShortRev or "dev";
+        src = ./.;
+        vendorHash = null;
+        subPackages = ["cmd/server"];
+      };
+    });
+
+    devShells = forAllSystems (pkgs: {
+      default = pkgs.mkShell {
+        packages = with pkgs; [
+          go
+
+          protoc-gen-go-grpc
+          protoc-gen-go
+          buf
+          air
+          golangci-lint
+
+          (writeShellScriptBin "run" ''
+            exec ${air}/bin/air -build.cmd "go build -o ./tmp/main ./cmd/server/main.go" -build.bin ./tmp/main
+          '')
+
+          (writeShellScriptBin "tst" ''
+            go test ./...
+          '')
+
+          (writeShellScriptBin "cover" ''
+            go test -coverprofile=coverage.out ./... && \
+            go tool cover -html=coverage.out -o coverage.html
+          '')
+        ];
+
+        shellHook = self.checks.${pkgs.system}.pre-commit.shellHook;
+      };
+    });
+
+    formatter = forAllSystems (pkgs: pkgs.alejandra);
+  };
+}
