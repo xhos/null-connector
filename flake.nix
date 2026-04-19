@@ -50,8 +50,8 @@
         pname = "null-connector";
         version = self.shortRev or self.dirtyShortRev or "dev";
         src = ./.;
-        vendorHash = null;
-        subPackages = ["cmd/server"];
+        vendorHash = "sha256-1pitP3ejlARSI7ZLXJQW53T5UgPVhtm3EwzZI1Xneu8=";
+        subPackages = ["cmd"];
       };
     });
 
@@ -67,7 +67,7 @@
           golangci-lint
 
           (writeShellScriptBin "run" ''
-            exec ${air}/bin/air -build.cmd "go build -o ./tmp/main ./cmd/server/main.go" -build.bin ./tmp/main
+            exec ${air}/bin/air -build.cmd "go build -o ./tmp/main ./cmd/main.go" -build.bin ./tmp/main
           '')
 
           (writeShellScriptBin "tst" ''
