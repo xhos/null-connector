@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -35,7 +37,7 @@ func main() {
 	logger.Info("starting null-connector")
 	logger.Debug("debug is enabled")
 
-	apiClient, err := api.NewClient(cfg.NullCoreURL, cfg.APIKey, cfg.UserID)
+	apiClient, err := api.NewClient(cfg.NullCoreURL, cfg.APIKey)
 	if err != nil {
 		logger.Fatal("api client init", "err", err)
 	}
@@ -51,11 +53,6 @@ func main() {
 	}
 	logger.Info("null-core connectivity confirmed")
 
-	providers := buildProviders(cfg, logger)
-	for _, p := range providers {
-		logger.Info("provider enabled", "name", p.Name())
-	}
-
 	grpcHealthSrv, err := grpc.NewHealthServer(cfg.GRPCAddress)
 	if err != nil {
 		logger.Fatal("grpc health server init", "err", err)
@@ -68,7 +65,8 @@ func main() {
 		}
 	}()
 
-	go runner.New(providers, apiClient, logger).PollAll(context.Background())
+	factory := providerFactory(cfg, logger)
+	go runner.New(apiClient, apiClient, factory, logger).RunOnce(context.Background())
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -78,19 +76,30 @@ func main() {
 	grpcHealthSrv.Stop()
 }
 
-func buildProviders(cfg config.Config, logger *log.Logger) []provider.Provider {
-	var providers []provider.Provider
-	if cfg.Wise.Enabled() {
-		providers = append(providers, wise.New(wise.Config{
-			APIToken:  cfg.Wise.APIToken,
-			ProfileID: cfg.Wise.ProfileID,
-		}, logger))
+func providerFactory(cfg config.Config, logger *log.Logger) runner.ProviderFactory {
+	return func(job api.SyncJob) (provider.Provider, error) {
+		switch job.Provider {
+		case "wise":
+			var c wise.Config
+			if err := json.Unmarshal(job.Credentials, &c); err != nil {
+				return nil, fmt.Errorf("decode wise credentials: %w", err)
+			}
+			return wise.New(c, logger), nil
+
+		case "snaptrade":
+			if cfg.SnapTradeClientID == "" || cfg.SnapTradeConsumerKey == "" {
+				return nil, fmt.Errorf("snaptrade app credentials not configured (SNAPTRADE_CLIENT_ID / SNAPTRADE_CONSUMER_KEY)")
+			}
+			var c snaptrade.Config
+			if err := json.Unmarshal(job.Credentials, &c); err != nil {
+				return nil, fmt.Errorf("decode snaptrade credentials: %w", err)
+			}
+			c.ClientID = cfg.SnapTradeClientID
+			c.ConsumerKey = cfg.SnapTradeConsumerKey
+			return snaptrade.New(c, logger), nil
+
+		default:
+			return nil, fmt.Errorf("unknown provider %q", job.Provider)
+		}
 	}
-	if cfg.SnapTrade.Enabled() {
-		providers = append(providers, snaptrade.New(snaptrade.Config{
-			ClientID:    cfg.SnapTrade.ClientID,
-			ConsumerKey: cfg.SnapTrade.ConsumerKey,
-		}, logger))
-	}
-	return providers
 }

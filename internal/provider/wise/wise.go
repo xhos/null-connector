@@ -9,8 +9,7 @@ import (
 )
 
 type Config struct {
-	APIToken  string
-	ProfileID string
+	APIToken string `json:"api_token"`
 }
 
 type Provider struct {

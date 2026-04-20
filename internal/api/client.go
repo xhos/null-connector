@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"null-connector/internal/domain"
 	pb "null-connector/internal/gen/null/v1"
@@ -19,26 +20,27 @@ import (
 )
 
 type Client struct {
-	conn         *grpc.ClientConn
-	txClient     pb.TransactionServiceClient
-	healthClient grpc_health_v1.HealthClient
-
-	authToken string
-	userID    string
+	conn            *grpc.ClientConn
+	txClient        pb.TransactionServiceClient
+	accountClient   pb.AccountServiceClient
+	connectorClient pb.ConnectorServiceClient
+	healthClient    grpc_health_v1.HealthClient
+	authToken       string
 }
 
-func NewClient(nullCoreURL, authToken, userID string) (*Client, error) {
+func NewClient(nullCoreURL, authToken string) (*Client, error) {
 	conn, err := grpc.NewClient(nullCoreURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("dial null-core: %w", err)
 	}
 
 	return &Client{
-		conn:         conn,
-		txClient:     pb.NewTransactionServiceClient(conn),
-		healthClient: grpc_health_v1.NewHealthClient(conn),
-		authToken:    authToken,
-		userID:       userID,
+		conn:            conn,
+		txClient:        pb.NewTransactionServiceClient(conn),
+		accountClient:   pb.NewAccountServiceClient(conn),
+		connectorClient: pb.NewConnectorServiceClient(conn),
+		healthClient:    grpc_health_v1.NewHealthClient(conn),
+		authToken:       authToken,
 	}, nil
 }
 
@@ -48,7 +50,7 @@ func (c *Client) Close() error {
 
 func (c *Client) Ping(ctx context.Context) error {
 	resp, err := c.healthClient.Check(ctx, &grpc_health_v1.HealthCheckRequest{
-		Service: "null.v1.UserService",
+		Service: "null.v1.ConnectorService",
 	})
 	if err != nil {
 		return fmt.Errorf("ping null-core: %w", err)
@@ -59,8 +61,49 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
-// CreateTransactions posts a batch to null-core
-func (c *Client) CreateTransactions(ctx context.Context, txs []domain.Transaction) error {
+type SyncJob struct {
+	ID          int64
+	UserID      string
+	Provider    string
+	Credentials []byte
+	Cursor      *time.Time
+}
+
+func (c *Client) ListSyncJobs(ctx context.Context) ([]SyncJob, error) {
+	resp, err := c.connectorClient.ListSyncJobs(c.withAuth(ctx), &pb.ListSyncJobsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("list sync jobs: %w", err)
+	}
+
+	out := make([]SyncJob, len(resp.Jobs))
+	for i, j := range resp.Jobs {
+		out[i] = SyncJob{
+			ID:          j.Id,
+			UserID:      j.UserId,
+			Provider:    j.Provider,
+			Credentials: j.Credentials,
+		}
+		if j.Cursor != nil {
+			t := j.Cursor.AsTime()
+			out[i].Cursor = &t
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) CompleteSyncJob(ctx context.Context, id int64, cursor time.Time, newStatus *string) error {
+	_, err := c.connectorClient.CompleteSyncJob(c.withAuth(ctx), &pb.CompleteSyncJobRequest{
+		Id:     id,
+		Cursor: timestamppb.New(cursor),
+		Status: newStatus,
+	})
+	if err != nil {
+		return fmt.Errorf("complete sync job: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) CreateTransactions(ctx context.Context, userID string, txs []domain.Transaction) error {
 	if len(txs) == 0 {
 		return nil
 	}
@@ -71,12 +114,10 @@ func (c *Client) CreateTransactions(ctx context.Context, txs []domain.Transactio
 	}
 
 	_, err := c.txClient.CreateTransaction(c.withAuth(ctx), &pb.CreateTransactionRequest{
-		UserId:       c.userID,
+		UserId:       userID,
 		Transactions: inputs,
 	})
 	if err != nil {
-		// AlreadyExists from the server is treated as success
-		// duplicate detection is null-core's job
 		if status.Code(err) == codes.AlreadyExists {
 			return nil
 		}

@@ -9,8 +9,13 @@ import (
 )
 
 type Config struct {
-	ClientID    string
-	ConsumerKey string
+	// deployment-wide, populated by the factory from env vars
+	ClientID    string `json:"-"`
+	ConsumerKey string `json:"-"`
+	// snaptrade's own per-end-user handle + secret, issued by /registerUser
+	// and stored in the encrypted credentials blob. not the null-core UUID.
+	SnapTradeUserID string `json:"snaptrade_user_id"`
+	UserSecret      string `json:"user_secret"`
 }
 
 type Provider struct {
