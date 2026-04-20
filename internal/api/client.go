@@ -96,6 +96,9 @@ func toInput(tx domain.Transaction) *pb.TransactionInput {
 		TxAmount:  amountToMoney(tx.Amount, tx.Currency),
 		Direction: directionToProto(tx.Direction),
 	}
+	if tx.ExternalID != "" {
+		in.ExternalId = &tx.ExternalID
+	}
 	if tx.Description != "" {
 		in.Description = &tx.Description
 	}
