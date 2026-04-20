@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -27,6 +28,8 @@ type Client struct {
 	healthClient    grpc_health_v1.HealthClient
 	authToken       string
 }
+
+var ErrAccountNotFound = errors.New("account not found")
 
 func NewClient(nullCoreURL, authToken string) (*Client, error) {
 	conn, err := grpc.NewClient(nullCoreURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -99,6 +102,44 @@ func (c *Client) CompleteSyncJob(ctx context.Context, id int64, cursor time.Time
 	})
 	if err != nil {
 		return fmt.Errorf("complete sync job: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) ListAccounts(ctx context.Context, userID string) ([]*pb.Account, error) {
+	resp, err := c.accountClient.ListAccounts(c.withAuth(ctx), &pb.ListAccountsRequest{UserId: userID})
+	if err != nil {
+		return nil, fmt.Errorf("list accounts: %w", err)
+	}
+	return resp.Accounts, nil
+}
+
+func (c *Client) CreateAccount(ctx context.Context, userID, name, bank, currency string, anchorBalance float64, colors []string) (*pb.Account, error) {
+	resp, err := c.accountClient.CreateAccount(c.withAuth(ctx), &pb.CreateAccountRequest{
+		UserId:        userID,
+		Name:          name,
+		Bank:          bank,
+		Type:          pb.AccountType_ACCOUNT_CHEQUING,
+		MainCurrency:  currency,
+		AnchorBalance: amountToMoney(anchorBalance, currency),
+		Colors:        colors,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("create account: %w", err)
+	}
+
+	return resp.Account, nil
+}
+
+func (c *Client) AddAccountAlias(ctx context.Context, userID string, accountID int64, alias string) error {
+	_, err := c.accountClient.AddAccountAlias(c.withAuth(ctx), &pb.AddAccountAliasRequest{
+		UserId:    userID,
+		AccountId: accountID,
+		Alias:     alias,
+	})
+	if err != nil {
+		return fmt.Errorf("add account alias: %w", err)
 	}
 	return nil
 }

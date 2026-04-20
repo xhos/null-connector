@@ -65,7 +65,7 @@ func main() {
 		}
 	}()
 
-	factory := providerFactory(cfg, logger)
+	factory := providerFactory(cfg, apiClient, logger)
 	go runner.New(apiClient, apiClient, factory, logger).RunOnce(context.Background())
 
 	stop := make(chan os.Signal, 1)
@@ -76,7 +76,7 @@ func main() {
 	grpcHealthSrv.Stop()
 }
 
-func providerFactory(cfg config.Config, logger *log.Logger) runner.ProviderFactory {
+func providerFactory(cfg config.Config, core *api.Client, logger *log.Logger) runner.ProviderFactory {
 	return func(job api.SyncJob) (provider.Provider, error) {
 		switch job.Provider {
 		case "wise":
@@ -84,7 +84,7 @@ func providerFactory(cfg config.Config, logger *log.Logger) runner.ProviderFacto
 			if err := json.Unmarshal(job.Credentials, &c); err != nil {
 				return nil, fmt.Errorf("decode wise credentials: %w", err)
 			}
-			return wise.New(c, logger), nil
+			return wise.New(c, core, job.UserID, job.Cursor, logger), nil
 
 		case "snaptrade":
 			if cfg.SnapTradeClientID == "" || cfg.SnapTradeConsumerKey == "" {
