@@ -20,4 +20,12 @@ type Transaction struct {
 
 	Description string
 	Merchant    string
+
+	// non-empty triggers a linked receipt after the tx is posted
+	ReceiptItems []ReceiptItem
+}
+
+type ReceiptItem struct {
+	Name        string
+	AmountCents int64
 }

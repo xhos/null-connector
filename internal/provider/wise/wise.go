@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"null-connector/internal/api"
@@ -124,7 +125,6 @@ func (p *Provider) resolveAccount(ctx context.Context, accountMap map[string]int
 	return acc.Id, nil
 }
 
-// TODO: emit fees (w.TotalFees) as their own tx for accurate P&L
 func toDomain(w *wiseapi.Transaction, accountID int64) domain.Transaction {
 	dir := domain.DirectionIn
 	if w.Type == "DEBIT" {
@@ -147,6 +147,15 @@ func toDomain(w *wiseapi.Transaction, accountID int64) domain.Transaction {
 	}
 	if w.Details.Merchant != nil && w.Details.Merchant.Name != "" {
 		tx.Merchant = w.Details.Merchant.Name
+	}
+
+	if fee := w.TotalFees.Value; fee != 0 {
+		totalCents := int64(math.Round(amount * 100))
+		feeCents := int64(math.Round(fee * 100))
+		tx.ReceiptItems = []domain.ReceiptItem{
+			{Name: "Transfer", AmountCents: totalCents - feeCents},
+			{Name: "Wise fee", AmountCents: feeCents},
+		}
 	}
 	return tx
 }

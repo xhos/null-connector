@@ -25,6 +25,7 @@ type Client struct {
 	txClient        pb.TransactionServiceClient
 	accountClient   pb.AccountServiceClient
 	connectorClient pb.ConnectorServiceClient
+	receiptClient   pb.ReceiptServiceClient
 	healthClient    grpc_health_v1.HealthClient
 	authToken       string
 }
@@ -42,6 +43,7 @@ func NewClient(nullCoreURL, authToken string) (*Client, error) {
 		txClient:        pb.NewTransactionServiceClient(conn),
 		accountClient:   pb.NewAccountServiceClient(conn),
 		connectorClient: pb.NewConnectorServiceClient(conn),
+		receiptClient:   pb.NewReceiptServiceClient(conn),
 		healthClient:    grpc_health_v1.NewHealthClient(conn),
 		authToken:       authToken,
 	}, nil
@@ -154,7 +156,7 @@ func (c *Client) CreateTransactions(ctx context.Context, userID string, txs []do
 		inputs = append(inputs, toInput(tx))
 	}
 
-	_, err := c.txClient.CreateTransaction(c.withAuth(ctx), &pb.CreateTransactionRequest{
+	resp, err := c.txClient.CreateTransaction(c.withAuth(ctx), &pb.CreateTransactionRequest{
 		UserId:       userID,
 		Transactions: inputs,
 	})
@@ -164,7 +166,53 @@ func (c *Client) CreateTransactions(ctx context.Context, userID string, txs []do
 		}
 		return fmt.Errorf("create transactions: %w", err)
 	}
+
+	idByExtID := make(map[string]int64, len(resp.Transactions))
+	for _, t := range resp.Transactions {
+		if t.ExternalId != nil {
+			idByExtID[*t.ExternalId] = t.Id
+		}
+	}
+
+	for _, tx := range txs {
+		if len(tx.ReceiptItems) == 0 {
+			continue
+		}
+		txID, ok := idByExtID[tx.ExternalID]
+		if !ok {
+			continue
+		}
+		if err := c.createReceiptForTx(ctx, userID, txID, tx); err != nil {
+			return fmt.Errorf("create receipt for tx %d: %w", txID, err)
+		}
+	}
 	return nil
+}
+
+func (c *Client) createReceiptForTx(ctx context.Context, userID string, txID int64, tx domain.Transaction) error {
+	items := make([]*pb.ReceiptItemInput, len(tx.ReceiptItems))
+	var total int64
+	for i, it := range tx.ReceiptItems {
+		items[i] = &pb.ReceiptItemInput{
+			RawName:        it.Name,
+			Quantity:       1,
+			UnitPriceCents: it.AmountCents,
+		}
+		total += it.AmountCents
+	}
+
+	merchant := tx.Merchant
+	currency := tx.Currency
+	_, err := c.receiptClient.CreateReceipt(c.withAuth(ctx), &pb.CreateReceiptRequest{
+		UserId:        userID,
+		TransactionId: &txID,
+		Merchant:      &merchant,
+		Currency:      &currency,
+		SubtotalCents: &total,
+		TotalCents:    &total,
+		Items:         items,
+	})
+	return err
 }
 
 func (c *Client) withAuth(ctx context.Context) context.Context {
