@@ -46,12 +46,26 @@ func (r *Runner) RunOnce(ctx context.Context) {
 		return
 	}
 	if len(jobs) == 0 {
-		r.log.Info("no sync jobs configured")
 		return
 	}
 
+	r.log.Info("running due jobs", "count", len(jobs))
 	for _, job := range jobs {
 		r.runJob(ctx, job)
+	}
+}
+
+func (r *Runner) Run(ctx context.Context, interval time.Duration) {
+	r.RunOnce(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.RunOnce(ctx)
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"null-connector/internal/api"
 	"null-connector/internal/config"
@@ -19,6 +20,8 @@ import (
 
 	"github.com/charmbracelet/log"
 )
+
+const pollInterval = 10 * time.Second
 
 func main() {
 	cfg := config.Load()
@@ -66,13 +69,17 @@ func main() {
 	}()
 
 	factory := providerFactory(cfg, apiClient, logger)
-	go runner.New(apiClient, apiClient, factory, logger).RunOnce(context.Background())
+
+	runnerCtx, cancelRunner := context.WithCancel(context.Background())
+	defer cancelRunner()
+	go runner.New(apiClient, apiClient, factory, logger).Run(runnerCtx, pollInterval)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	logger.Info("shutting down. bye!")
 
+	cancelRunner()
 	grpcHealthSrv.Stop()
 }
 
