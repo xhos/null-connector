@@ -50,7 +50,7 @@
         pname = "null-connector";
         version = self.shortRev or self.dirtyShortRev or "dev";
         src = ./.;
-        vendorHash = "sha256-InS2Rso11JaGbR3Wq1/kBZdlKOxb7ej/bpduBDTFGnc=";
+        vendorHash = "sha256-hMBbuZFCz2Dia0if/gS/GPnsONIwEqX4E3b0vYudW7o=";
         subPackages = ["cmd"];
       };
     });
