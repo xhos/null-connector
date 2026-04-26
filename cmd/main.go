@@ -103,7 +103,7 @@ func providerFactory(cfg config.Config, core *api.Client, logger *log.Logger) ru
 			}
 			c.ClientID = cfg.SnapTradeClientID
 			c.ConsumerKey = cfg.SnapTradeConsumerKey
-			return snaptrade.New(c, logger), nil
+			return snaptrade.New(c, core, job.UserID, job.Cursor, logger), nil
 
 		default:
 			return nil, fmt.Errorf("unknown provider %q", job.Provider)
